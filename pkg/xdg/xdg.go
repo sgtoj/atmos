@@ -57,6 +57,13 @@ func LookupXDGConfigDir(subpath string) string {
 	return lookupXDGDir("XDG_CONFIG_HOME", "ATMOS_XDG_CONFIG_HOME", xdg.ConfigHome, subpath)
 }
 
+// LookupXDGDataDir resolves the Atmos data directory path without creating it.
+// Use this for pure path getters where directory creation is not desired (the
+// directory is created lazily at write time by the caller).
+func LookupXDGDataDir(subpath string) string {
+	return lookupXDGDir("XDG_DATA_HOME", "ATMOS_XDG_DATA_HOME", xdg.DataHome, subpath)
+}
+
 // lookupXDGDir resolves an XDG directory path without creating it.
 func lookupXDGDir(xdgVar, atmosVar string, defaultDir string, subpath string) string {
 	v := viper.New()

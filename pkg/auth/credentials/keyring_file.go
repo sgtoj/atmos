@@ -214,6 +214,9 @@ func (s *fileKeyringStore) Store(alias string, creds types.ICredentials, realm s
 	case *types.ProCredentials:
 		typ = "atmos-pro"
 		raw, err = json.Marshal(c)
+	case *types.TeleportCredentials:
+		typ = "teleport"
+		raw, err = json.Marshal(c)
 	case *mock.Credentials:
 		typ = "mock"
 		raw, err = json.Marshal(c)
@@ -284,6 +287,12 @@ func (s *fileKeyringStore) Retrieve(alias string, realm string) (types.ICredenti
 		var c types.ProCredentials
 		if err := json.Unmarshal(env.Data, &c); err != nil {
 			return nil, errors.Join(ErrCredentialStore, fmt.Errorf("failed to unmarshal Atmos Pro credentials: %w", err))
+		}
+		return &c, nil
+	case "teleport":
+		var c types.TeleportCredentials
+		if err := json.Unmarshal(env.Data, &c); err != nil {
+			return nil, errors.Join(ErrCredentialStore, fmt.Errorf("failed to unmarshal Teleport credentials: %w", err))
 		}
 		return &c, nil
 	case "mock":

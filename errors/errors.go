@@ -980,6 +980,21 @@ var (
 	ErrKubeconfigWrite      = errors.New("failed to write kubeconfig")
 	ErrKubeconfigMerge      = errors.New("failed to merge kubeconfig")
 
+	// Teleport authentication and integration errors.
+	ErrTeleportProfileNotFound       = errors.New("teleport profile not found")
+	ErrTeleportProfileExpired        = errors.New("teleport profile expired")
+	ErrTeleportProxyUnreachable      = errors.New("teleport proxy unreachable")
+	ErrTeleportProxyResolution       = errors.New("failed to resolve teleport proxy address")
+	ErrTeleportJoinFailed            = errors.New("teleport bot join failed")
+	ErrTeleportBotIdentityWrite      = errors.New("failed to write teleport bot identity file")
+	ErrTeleportBotIdentityRead       = errors.New("failed to read teleport bot identity file")
+	ErrTeleportKubeClusterNotFound   = errors.New("teleport kubernetes cluster not found")
+	ErrTeleportKubeCertGeneration    = errors.New("failed to generate teleport kubernetes certificate")
+	ErrTeleportUnsupportedJoinMethod = errors.New("unsupported teleport bot join method")
+	ErrTeleportInvalidConfig         = errors.New("invalid teleport configuration")
+	ErrTeleportIntegrationFailed     = errors.New("teleport integration failed")
+	ErrTeleportCredentialsType       = errors.New("expected teleport credentials")
+
 	// Atmos Pro authentication (atmos/pro provider) errors.
 	ErrProAuthFailed         = errors.New("authentication to Atmos Pro failed")
 	ErrProWorkspaceIDMissing = errors.New("workspace ID for Atmos Pro is required (set via auth provider spec.workspace_id, settings.pro.workspace_id, or ATMOS_PRO_WORKSPACE_ID)")

@@ -157,9 +157,10 @@ type IntegrationVia struct {
 
 // IntegrationSpec defines the spec configuration for integrations.
 type IntegrationSpec struct {
-	AutoProvision *bool        `yaml:"auto_provision,omitempty" json:"auto_provision,omitempty" mapstructure:"auto_provision"` // Whether to auto-provision on identity login. Defaults to true.
-	Registry      *ECRRegistry `yaml:"registry,omitempty" json:"registry,omitempty" mapstructure:"registry"`                   // Single ECR registry for aws/ecr integrations.
-	Cluster       *EKSCluster  `yaml:"cluster,omitempty" json:"cluster,omitempty" mapstructure:"cluster"`                      // EKS cluster for aws/eks integrations.
+	AutoProvision      *bool                      `yaml:"auto_provision,omitempty" json:"auto_provision,omitempty" mapstructure:"auto_provision"`                // Whether to auto-provision on identity login. Defaults to true.
+	Registry           *ECRRegistry               `yaml:"registry,omitempty" json:"registry,omitempty" mapstructure:"registry"`                                  // Single ECR registry for aws/ecr integrations.
+	Cluster            *EKSCluster                `yaml:"cluster,omitempty" json:"cluster,omitempty" mapstructure:"cluster"`                                     // EKS cluster for aws/eks integrations.
+	TeleportKubernetes *TeleportKubernetesCluster `yaml:"teleport_kubernetes,omitempty" json:"teleport_kubernetes,omitempty" mapstructure:"teleport_kubernetes"` // Kubernetes cluster for teleport/kubernetes integrations.
 
 	// GitHub STS integration (github/sts) fields.
 	Repos         []string `yaml:"repos,omitempty" json:"repos,omitempty" mapstructure:"repos"`                               // Optional source repos (sent as sts sources[]).
@@ -201,4 +202,25 @@ type KubeconfigSettings struct {
 
 	// Update determines how to handle existing kubeconfig: "merge" (default), "replace", or "error".
 	Update string `yaml:"update,omitempty" json:"update,omitempty" mapstructure:"update"`
+}
+
+// TeleportKubernetesCluster represents a Teleport-mediated Kubernetes cluster
+// for teleport/kubernetes integrations.
+//
+// Unlike EKSCluster, this struct does not carry a region: Teleport's proxy
+// address (configured on the upstream teleport/proxy provider) is the only
+// network endpoint kubectl reaches; the kube cluster's underlying cloud
+// region is opaque to the client.
+type TeleportKubernetesCluster struct {
+	// Name is the Kubernetes cluster name as registered in Teleport (required).
+	Name string `yaml:"name" json:"name" mapstructure:"name"`
+
+	// Alias is the context name in kubeconfig (optional, defaults to
+	// "<proxy_host>-<name>").
+	Alias string `yaml:"alias,omitempty" json:"alias,omitempty" mapstructure:"alias"`
+
+	// Kubeconfig contains kubeconfig file settings (optional). Reuses
+	// KubeconfigSettings (shared with the aws/eks integration so the same
+	// kubeconfig file can be safely written to by both integrations).
+	Kubeconfig *KubeconfigSettings `yaml:"kubeconfig,omitempty" json:"kubeconfig,omitempty" mapstructure:"kubeconfig"`
 }

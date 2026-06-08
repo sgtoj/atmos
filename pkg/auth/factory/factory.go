@@ -48,6 +48,8 @@ func NewFactory() *Factory {
 	}
 	RegisterGCPProviders(f)
 	RegisterGCPIdentities(f)
+	RegisterTeleportProviders(f)
+	RegisterTeleportIdentities(f)
 	return f
 }
 

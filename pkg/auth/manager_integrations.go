@@ -32,22 +32,61 @@ func resetProcessIntegrationCache() {
 // For ECR integrations: "aws/ecr:<account_id>:<region>" — two configs pointing at the same
 // registry (e.g. a global + component-level duplicate) collapse to a single login.
 // For EKS integrations: "aws/eks:<cluster_name>:<region>" — same dedup logic for kubeconfig.
+// For Teleport Kubernetes integrations: "teleport/kubernetes:<cluster_name>" — the proxy
+// address discriminator is implicit in the upstream identity's provider, so the cluster name
+// alone is the canonical key.
 // All other integration types fall back to the config name to preserve existing behaviour.
 func integrationTargetKey(name string, cfg schema.Integration) string {
+	if key := canonicalIntegrationKey(cfg); key != "" {
+		return key
+	}
+	return name
+}
+
+// canonicalIntegrationKey returns the per-kind canonical dedup key, or "" when
+// no kind-specific key applies (caller falls back to the config name). Split
+// out from integrationTargetKey to keep that function's cyclomatic complexity
+// below the project's lint threshold as we add more kinds.
+func canonicalIntegrationKey(cfg schema.Integration) string {
 	switch cfg.Kind {
 	case integrations.KindAWSECR:
-		if cfg.Spec != nil && cfg.Spec.Registry != nil {
-			return "aws/ecr:" + cfg.Spec.Registry.AccountID + ":" + cfg.Spec.Registry.Region
-		}
+		return ecrTargetKey(cfg.Spec)
 	case integrations.KindAWSECRPublic:
 		// ECR Public is a single global registry — no account or region discriminator needed.
 		return integrations.KindAWSECRPublic
 	case integrations.KindAWSEKS:
-		if cfg.Spec != nil && cfg.Spec.Cluster != nil {
-			return "aws/eks:" + cfg.Spec.Cluster.Name + ":" + cfg.Spec.Cluster.Region
-		}
+		return eksTargetKey(cfg.Spec)
+	case integrations.KindTeleportKubernetes:
+		return teleportKubernetesTargetKey(cfg.Spec)
 	}
-	return name
+	return ""
+}
+
+// ecrTargetKey returns the dedup key for aws/ecr integrations, or "" when the
+// spec is missing the required registry coordinates.
+func ecrTargetKey(spec *schema.IntegrationSpec) string {
+	if spec == nil || spec.Registry == nil {
+		return ""
+	}
+	return "aws/ecr:" + spec.Registry.AccountID + ":" + spec.Registry.Region
+}
+
+// eksTargetKey returns the dedup key for aws/eks integrations, or "" when the
+// spec is missing the required cluster coordinates.
+func eksTargetKey(spec *schema.IntegrationSpec) string {
+	if spec == nil || spec.Cluster == nil {
+		return ""
+	}
+	return "aws/eks:" + spec.Cluster.Name + ":" + spec.Cluster.Region
+}
+
+// teleportKubernetesTargetKey returns the dedup key for teleport/kubernetes
+// integrations, or "" when the cluster reference is missing.
+func teleportKubernetesTargetKey(spec *schema.IntegrationSpec) string {
+	if spec == nil || spec.TeleportKubernetes == nil {
+		return ""
+	}
+	return "teleport/kubernetes:" + spec.TeleportKubernetes.Name
 }
 
 // triggerIntegrations executes integrations that reference this identity with auto_provision enabled.

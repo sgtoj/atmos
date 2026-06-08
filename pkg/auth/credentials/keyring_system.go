@@ -87,6 +87,14 @@ func (s *systemKeyringStore) Store(alias string, creds types.ICredentials, realm
 	case *types.ProCredentials:
 		typ = "atmos-pro"
 		raw, err = json.Marshal(c)
+	case *types.TeleportCredentials:
+		typ = "teleport"
+		raw, err = json.Marshal(c)
+		log.Debug("Storing Teleport credentials in keyring",
+			logKeyAlias, alias,
+			"realm", realm,
+			"cluster", c.ClusterName,
+			"is_bot", c.IsBot)
 	default:
 		return fmt.Errorf("%w: %T", errors.Join(ErrCredentialStore, ErrUnsupportedCredentialType), creds)
 	}
@@ -186,6 +194,17 @@ func (s *systemKeyringStore) Retrieve(alias string, realm string) (types.ICreden
 		if err := json.Unmarshal(env.Data, &c); err != nil {
 			return nil, errors.Join(ErrCredentialStore, fmt.Errorf("failed to unmarshal Atmos Pro credentials: %w", err))
 		}
+		return &c, nil
+	case "teleport":
+		var c types.TeleportCredentials
+		if err := json.Unmarshal(env.Data, &c); err != nil {
+			return nil, errors.Join(ErrCredentialStore, fmt.Errorf("failed to unmarshal Teleport credentials: %w", err))
+		}
+		log.Debug("Retrieved Teleport credentials from keyring",
+			logKeyAlias, alias,
+			"realm", realm,
+			"cluster", c.ClusterName,
+			"is_bot", c.IsBot)
 		return &c, nil
 	default:
 		return nil, fmt.Errorf("%w: %q", errors.Join(ErrCredentialStore, ErrUnknownCredentialType), env.Type)

@@ -262,6 +262,25 @@ func TestIntegrationTargetKey(t *testing.T) {
 			want:        "aws/ecr-public",
 		},
 		{
+			name:    "Teleport Kubernetes with cluster",
+			intName: "prod-eks-tp",
+			integration: schema.Integration{
+				Kind: "teleport/kubernetes",
+				Spec: &schema.IntegrationSpec{
+					TeleportKubernetes: &schema.TeleportKubernetesCluster{Name: "prod-eks"},
+				},
+			},
+			want: "teleport/kubernetes:prod-eks",
+		},
+		{
+			name:    "Teleport Kubernetes without spec falls back to name",
+			intName: "tp-no-spec",
+			integration: schema.Integration{
+				Kind: "teleport/kubernetes",
+			},
+			want: "tp-no-spec",
+		},
+		{
 			name:    "unknown kind uses name",
 			intName: "custom-integration",
 			integration: schema.Integration{

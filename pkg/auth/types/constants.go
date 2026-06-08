@@ -26,4 +26,11 @@ const (
 
 	// GitHub provider kinds.
 	ProviderKindGitHubOIDC = "github/oidc"
+
+	// Teleport provider kinds.
+	ProviderKindTeleportProxy = "teleport/proxy"
+
+	// Teleport identity kinds.
+	IdentityKindTeleportUser = "teleport/user"
+	IdentityKindTeleportBot  = "teleport/bot"
 )

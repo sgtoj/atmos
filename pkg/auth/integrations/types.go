@@ -9,10 +9,11 @@ import (
 
 // Integration kind constants.
 const (
-	KindAWSECR       = "aws/ecr"
-	KindAWSECRPublic = "aws/ecr-public"
-	KindAWSEKS       = "aws/eks"
-	KindGitHubSTS    = "github/sts"
+	KindAWSECR             = "aws/ecr"
+	KindAWSECRPublic       = "aws/ecr-public"
+	KindAWSEKS             = "aws/eks"
+	KindGitHubSTS          = "github/sts"
+	KindTeleportKubernetes = "teleport/kubernetes"
 )
 
 // Integration represents a client-only credential materialization.

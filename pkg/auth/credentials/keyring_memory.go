@@ -50,6 +50,9 @@ func (s *memoryKeyringStore) Store(alias string, creds types.ICredentials, realm
 	case *types.ProCredentials:
 		typ = "atmos-pro"
 		raw, err = json.Marshal(c)
+	case *types.TeleportCredentials:
+		typ = "teleport"
+		raw, err = json.Marshal(c)
 	default:
 		return fmt.Errorf("%w: %T", errors.Join(ErrCredentialStore, ErrUnsupportedCredentialType), creds)
 	}
@@ -109,6 +112,12 @@ func (s *memoryKeyringStore) Retrieve(alias string, realm string) (types.ICreden
 		var c types.ProCredentials
 		if err := json.Unmarshal(env.Data, &c); err != nil {
 			return nil, errors.Join(ErrCredentialStore, fmt.Errorf("failed to unmarshal Atmos Pro credentials: %w", err))
+		}
+		return &c, nil
+	case "teleport":
+		var c types.TeleportCredentials
+		if err := json.Unmarshal(env.Data, &c); err != nil {
+			return nil, errors.Join(ErrCredentialStore, fmt.Errorf("failed to unmarshal Teleport credentials: %w", err))
 		}
 		return &c, nil
 	default:

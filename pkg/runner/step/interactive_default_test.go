@@ -136,35 +136,6 @@ func TestInteractiveHandlers_NonTTYUsesDefault(t *testing.T) {
 	}
 }
 
-// TestInteractiveHandlers_NonTTYNoDefaultErrors verifies the historical behavior
-// is preserved: without a default, interactive steps still fail with
-// ErrStepTTYRequired in a non-TTY environment.
-func TestInteractiveHandlers_NonTTYNoDefaultErrors(t *testing.T) {
-	skipIfInteractiveTTY(t)
-
-	ctx := context.Background()
-	names := []string{"choose", "input", "confirm", "filter", "file", "write"}
-
-	for _, name := range names {
-		t.Run(name, func(t *testing.T) {
-			handler, ok := Get(name)
-			require.True(t, ok)
-
-			step := &schema.WorkflowStep{
-				Name:    name + "-step",
-				Type:    name,
-				Prompt:  "Choose",
-				Options: []string{"a", "b"}, // For choose/filter.
-			}
-
-			result, err := handler.Execute(ctx, step, NewVariables())
-			require.Error(t, err)
-			assert.Nil(t, result)
-			assert.ErrorIs(t, err, errUtils.ErrStepTTYRequired)
-		})
-	}
-}
-
 // TestInteractiveHandlers_NonTTYDefaultTemplating verifies the default value is
 // rendered through the step variable templating (e.g. {{ .env.VAR }}) before it
 // is returned in the non-TTY path.

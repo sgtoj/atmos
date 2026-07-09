@@ -85,20 +85,6 @@ func (h BaseHandler) ttyRequiredError(step *schema.WorkflowStep) error {
 		Err()
 }
 
-// CheckTTY verifies TTY availability for interactive steps.
-// Returns an error if TTY is required but not available.
-func (h BaseHandler) CheckTTY(step *schema.WorkflowStep) error {
-	defer perf.Track(nil, "step.BaseHandler.CheckTTY")()
-
-	if !h.requiresTTY {
-		return nil
-	}
-	if h.hasInteractiveTTY() {
-		return nil
-	}
-	return h.ttyRequiredError(step)
-}
-
 // resolveInteractive decides how an interactive step should obtain its value
 // based on TTY availability and whether a `default` is configured:
 //
@@ -148,6 +134,26 @@ func (h BaseHandler) ResolveContent(ctx context.Context, step *schema.WorkflowSt
 			WithCause(err).
 			WithContext("step", step.Name).
 			WithContext("field", "content").
+			Err()
+	}
+	return resolved, nil
+}
+
+// ResolveDefault resolves Go templates in the step's default value, returning an
+// empty string when no default is configured. Shared by all interactive
+// handlers so default resolution is defined in exactly one place.
+func (h BaseHandler) ResolveDefault(ctx context.Context, step *schema.WorkflowStep, vars *Variables) (string, error) {
+	defer perf.Track(nil, "step.BaseHandler.ResolveDefault")()
+
+	if step.Default == "" {
+		return "", nil
+	}
+	resolved, err := vars.Resolve(step.Default)
+	if err != nil {
+		return "", errUtils.Build(errUtils.ErrTemplateEvaluation).
+			WithCause(err).
+			WithContext("step", step.Name).
+			WithContext("field", "default").
 			Err()
 	}
 	return resolved, nil

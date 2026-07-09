@@ -184,11 +184,23 @@ func TestResolveWorkflowStepCommand(t *testing.T) {
 		stepExecutorState.Variables().Set("account", stepPkg.NewStepResult("prod"))
 
 		got, err := resolveWorkflowStepCommand(
-			`deploy {{ .steps.account.value }} region={{ .env.REGION }}`,
-			[]string{"REGION=euc1"},
+			`deploy {{ .steps.account.value }} region={{ .env.ATMOS_TEST_OVERLAY_REGION }}`,
+			[]string{"ATMOS_TEST_OVERLAY_REGION=euc1"},
 		)
 		require.NoError(t, err)
 		assert.Equal(t, "deploy prod region=euc1", got)
+	})
+
+	t.Run("step env overlay does not leak into the shared executor env", func(t *testing.T) {
+		initStepExecutorWithStages(&schema.WorkflowDefinition{})
+
+		_, err := resolveWorkflowStepCommand(`x={{ .env.ATMOS_TEST_LEAK_KEY }}`, []string{"ATMOS_TEST_LEAK_KEY=leaked"})
+		require.NoError(t, err)
+
+		// The overlay must not persist onto the shared step executor's env, or a
+		// key set only for one step would leak into later steps' templates.
+		_, present := stepExecutorState.Variables().Env["ATMOS_TEST_LEAK_KEY"]
+		assert.False(t, present, "per-step env overlay leaked into the shared executor env")
 	})
 
 	t.Run("plain command without templates is unchanged", func(t *testing.T) {
@@ -196,5 +208,18 @@ func TestResolveWorkflowStepCommand(t *testing.T) {
 		got, err := resolveWorkflowStepCommand("terraform plan", nil)
 		require.NoError(t, err)
 		assert.Equal(t, "terraform plan", got)
+	})
+
+	t.Run("engine parity: Sprig/Gomplate functions resolve like custom commands", func(t *testing.T) {
+		initStepExecutorWithStages(&schema.WorkflowDefinition{})
+		// Mirror the renderer alignment done in ExecuteWorkflow.
+		stepExecutorState.Variables().SetTemplateRenderer(func(name, input string, data any) (string, error) {
+			return ProcessTmpl(&schema.AtmosConfiguration{}, name, input, data, false)
+		})
+		stepExecutorState.Variables().Set("account", stepPkg.NewStepResult("prod"))
+
+		got, err := resolveWorkflowStepCommand(`deploy {{ .steps.account.value | upper }}`, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "deploy PROD", got)
 	})
 }

@@ -43,14 +43,14 @@ func (h *FileHandler) Validate(step *schema.WorkflowStep) error {
 func (h *FileHandler) Execute(ctx context.Context, step *schema.WorkflowStep, vars *Variables) (*StepResult, error) {
 	defer perf.Track(nil, "step.FileHandler.Execute")()
 
-	useTTY, err := h.resolveInteractive(step)
+	shouldPrompt, err := h.resolveInteractive(step)
 	if err != nil {
 		return nil, err
 	}
 
 	// Non-TTY with a configured default: use the default path without prompting.
-	if !useTTY {
-		defaultVal, resolveErr := h.resolveDefault(step, vars)
+	if !shouldPrompt {
+		defaultVal, resolveErr := h.ResolveDefault(ctx, step, vars)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
@@ -89,18 +89,6 @@ func (h *FileHandler) Execute(ctx context.Context, step *schema.WorkflowStep, va
 
 	fullPath := filepath.Join(absPath, choice)
 	return NewStepResult(fullPath), nil
-}
-
-// resolveDefault resolves template variables in the default file path.
-func (h *FileHandler) resolveDefault(step *schema.WorkflowStep, vars *Variables) (string, error) {
-	if step.Default == "" {
-		return "", nil
-	}
-	defaultVal, err := vars.Resolve(step.Default)
-	if err != nil {
-		return "", fmt.Errorf("step '%s': failed to resolve default: %w", step.Name, err)
-	}
-	return defaultVal, nil
 }
 
 // resolveStartPath resolves and validates the starting path for file scanning.

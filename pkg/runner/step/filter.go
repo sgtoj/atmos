@@ -51,14 +51,14 @@ func (h *FilterHandler) Validate(step *schema.WorkflowStep) error {
 func (h *FilterHandler) Execute(ctx context.Context, step *schema.WorkflowStep, vars *Variables) (*StepResult, error) {
 	defer perf.Track(nil, "step.FilterHandler.Execute")()
 
-	useTTY, err := h.resolveInteractive(step)
+	shouldPrompt, err := h.resolveInteractive(step)
 	if err != nil {
 		return nil, err
 	}
 
 	// Non-TTY with a configured default: use the default without prompting.
-	if !useTTY {
-		defaultVal, resolveErr := h.resolveDefault(step, vars)
+	if !shouldPrompt {
+		defaultVal, resolveErr := h.ResolveDefault(ctx, step, vars)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
@@ -92,20 +92,10 @@ func (h *FilterHandler) Execute(ctx context.Context, step *schema.WorkflowStep, 
 	return h.executeSingleSelect(step.Name, prompt, options)
 }
 
-// resolveDefault resolves template variables in the default value.
-func (h *FilterHandler) resolveDefault(step *schema.WorkflowStep, vars *Variables) (string, error) {
-	if step.Default == "" {
-		return "", nil
-	}
-	defaultVal, err := vars.Resolve(step.Default)
-	if err != nil {
-		return "", fmt.Errorf("step '%s': failed to resolve default: %w", step.Name, err)
-	}
-	return defaultVal, nil
-}
-
 // resultFromDefault builds a StepResult from the configured default for the
 // non-TTY path. For multi-select the default is split on commas into Values.
+// The default is used verbatim (no membership check against options), matching
+// the single-select behavior and the documented non-TTY contract.
 func (h *FilterHandler) resultFromDefault(step *schema.WorkflowStep, defaultVal string) *StepResult {
 	if step.Multiple || step.Limit > 1 {
 		values := splitFilterDefaults(defaultVal)

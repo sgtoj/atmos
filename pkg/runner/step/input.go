@@ -40,18 +40,18 @@ func (h *InputHandler) Validate(step *schema.WorkflowStep) error {
 func (h *InputHandler) Execute(ctx context.Context, step *schema.WorkflowStep, vars *Variables) (*StepResult, error) {
 	defer perf.Track(nil, "step.InputHandler.Execute")()
 
-	useTTY, err := h.resolveInteractive(step)
+	shouldPrompt, err := h.resolveInteractive(step)
 	if err != nil {
 		return nil, err
 	}
 
-	defaultVal, err := h.resolveOptionalValue(ctx, step, vars, step.Default, "default")
+	defaultVal, err := h.ResolveDefault(ctx, step, vars)
 	if err != nil {
 		return nil, err
 	}
 
 	// Non-TTY with a configured default: use the default without prompting.
-	if !useTTY {
+	if !shouldPrompt {
 		return NewStepResult(defaultVal), nil
 	}
 

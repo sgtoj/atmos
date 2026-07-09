@@ -41,7 +41,7 @@ func (h *ConfirmHandler) Validate(step *schema.WorkflowStep) error {
 func (h *ConfirmHandler) Execute(ctx context.Context, step *schema.WorkflowStep, vars *Variables) (*StepResult, error) {
 	defer perf.Track(nil, "step.ConfirmHandler.Execute")()
 
-	useTTY, err := h.resolveInteractive(step)
+	shouldPrompt, err := h.resolveInteractive(step)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (h *ConfirmHandler) Execute(ctx context.Context, step *schema.WorkflowStep,
 	defaultVal := strings.ToLower(step.Default) == "yes" || strings.ToLower(step.Default) == "true"
 
 	// Non-TTY with a configured default: use the default without prompting.
-	if !useTTY {
+	if !shouldPrompt {
 		return NewStepResult(confirmValue(defaultVal)), nil
 	}
 

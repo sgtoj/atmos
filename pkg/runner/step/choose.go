@@ -49,18 +49,18 @@ func (h *ChooseHandler) Validate(step *schema.WorkflowStep) error {
 func (h *ChooseHandler) Execute(ctx context.Context, step *schema.WorkflowStep, vars *Variables) (*StepResult, error) {
 	defer perf.Track(nil, "step.ChooseHandler.Execute")()
 
-	useTTY, err := h.resolveInteractive(step)
+	shouldPrompt, err := h.resolveInteractive(step)
 	if err != nil {
 		return nil, err
 	}
 
-	defaultVal, err := h.resolveDefault(step, vars)
+	defaultVal, err := h.ResolveDefault(ctx, step, vars)
 	if err != nil {
 		return nil, err
 	}
 
 	// Non-TTY with a configured default: use the default without prompting.
-	if !useTTY {
+	if !shouldPrompt {
 		return NewStepResult(defaultVal), nil
 	}
 
@@ -88,18 +88,6 @@ func (h *ChooseHandler) resolveOptions(step *schema.WorkflowStep, vars *Variable
 		options[i] = resolved
 	}
 	return options, nil
-}
-
-// resolveDefault resolves the default value if present.
-func (h *ChooseHandler) resolveDefault(step *schema.WorkflowStep, vars *Variables) (string, error) {
-	if step.Default == "" {
-		return "", nil
-	}
-	defaultVal, err := vars.Resolve(step.Default)
-	if err != nil {
-		return "", fmt.Errorf("step '%s': failed to resolve default: %w", step.Name, err)
-	}
-	return defaultVal, nil
 }
 
 // createChooseKeyMap creates a keymap with ESC added to quit keys.

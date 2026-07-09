@@ -2,9 +2,9 @@ package exec
 
 import (
 	"fmt"
-	"strings"
 
 	errUtils "github.com/cloudposse/atmos/errors"
+	envpkg "github.com/cloudposse/atmos/pkg/env"
 	"github.com/cloudposse/atmos/pkg/perf"
 	"github.com/cloudposse/atmos/pkg/schema"
 	u "github.com/cloudposse/atmos/pkg/utils"
@@ -94,10 +94,15 @@ func resolveStepFunctionString(atmosConfig *schema.AtmosConfiguration, value str
 	if err != nil {
 		return "", err
 	}
-	if s, ok := result.(string); ok {
-		return s, nil
+	// Interactive step fields (default/prompt/options/placeholder) are scalars.
+	// Reject a function that returns a non-string (e.g. !exec yielding JSON) so a
+	// map/array is never silently stringified into a scalar field.
+	s, ok := result.(string)
+	if !ok {
+		return "", fmt.Errorf("%w: function %q must return a string in a workflow step field, got %T",
+			errUtils.ErrStepExecutionFailed, value, result)
 	}
-	return fmt.Sprintf("%v", result), nil
+	return s, nil
 }
 
 // isWorkflowStepFunction reports whether value is a supported, context-free YAML
@@ -134,22 +139,16 @@ func workflowCommandSupportsTemplating(commandType string) bool {
 // results captured by earlier steps. This gives workflow shell/atmos/exec steps
 // the same access to prior step outputs that custom command steps already have.
 //
-// The step environment is exposed as {{ .env.* }} so commands can reference
-// step/workflow env vars in addition to captured step results. It is a no-op
-// when the shared step executor has not been initialized.
+// The step environment is overlaid as {{ .env.* }} for this call only (it does
+// not mutate the shared executor's env), so per-step env does not leak across
+// steps. It is a no-op when the shared step executor has not been initialized.
 func resolveWorkflowStepCommand(command string, stepEnv []string) (string, error) {
 	defer perf.Track(nil, "exec.resolveWorkflowStepCommand")()
 
 	if command == "" || stepExecutorState == nil {
 		return command, nil
 	}
-	vars := stepExecutorState.Variables()
-	for _, env := range stepEnv {
-		key, value, ok := strings.Cut(env, "=")
-		if !ok {
-			continue
-		}
-		vars.SetEnv(key, value)
-	}
-	return vars.Resolve(command)
+	// Overlay the step environment for this resolution only (non-mutating), so a
+	// per-step env does not leak into later steps' template context.
+	return stepExecutorState.Variables().ResolveWith(command, envpkg.SliceToMap(stepEnv))
 }

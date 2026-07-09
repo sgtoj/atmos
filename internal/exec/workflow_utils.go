@@ -43,6 +43,11 @@ import (
 // Workflow error title for formatted output.
 const WorkflowErrTitle = "Workflow Error"
 
+// workflowTemplatePasses is the number of template render passes the workflow
+// step executor uses, matching the custom command step path so multi-level
+// templates resolve identically in both.
+const workflowTemplatePasses = 3
+
 // bgRunIDLen is the length of the short per-run id used to scope background container
 // instance names when no explicit `--stack` is given.
 const bgRunIDLen = 8
@@ -281,6 +286,19 @@ func ExecuteWorkflow(
 
 	// Initialize step executor with stage count for stage step type.
 	initStepExecutorWithStages(workflowDefinition)
+
+	// Align the workflow step executor's template engine with custom command
+	// steps: use the full Atmos template renderer (Sprig/Gomplate + multi-pass)
+	// instead of plain text/template, so {{ .steps.* }} / {{ .env.* }} /
+	// {{ .flags.* }} and template functions resolve identically in both. Flags
+	// are protected so a flag value containing template markers is not
+	// re-evaluated on later passes (mirrors the custom command path).
+	workflowVars := stepExecutorState.Variables()
+	workflowVars.SetTemplateRenderer(func(name, input string, data any) (string, error) {
+		return ProcessTmpl(&atmosConfig, name, input, data, false)
+	})
+	workflowVars.SetTemplatePasses(workflowTemplatePasses)
+	workflowVars.ProtectTemplateRoots("Flags", "flags")
 
 	// Evaluate value-producing YAML functions (!env, !exec) in interactive step
 	// fields (default/prompt/placeholder/options). Workflow manifests are parsed

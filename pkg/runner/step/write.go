@@ -34,18 +34,6 @@ func (h *WriteHandler) Validate(step *schema.WorkflowStep) error {
 	return h.ValidateRequired(step, "prompt", step.Prompt)
 }
 
-// resolveDefault resolves template variables in the default text.
-func (h *WriteHandler) resolveDefault(step *schema.WorkflowStep, vars *Variables) (string, error) {
-	if step.Default == "" {
-		return "", nil
-	}
-	defaultVal, err := vars.Resolve(step.Default)
-	if err != nil {
-		return "", fmt.Errorf("step '%s': failed to resolve default: %w", step.Name, err)
-	}
-	return defaultVal, nil
-}
-
 // Execute prompts for multi-line input and returns the result.
 //
 // When there is no TTY (e.g. in CI) and a `default` is configured, the default
@@ -54,14 +42,14 @@ func (h *WriteHandler) resolveDefault(step *schema.WorkflowStep, vars *Variables
 func (h *WriteHandler) Execute(ctx context.Context, step *schema.WorkflowStep, vars *Variables) (*StepResult, error) {
 	defer perf.Track(nil, "step.WriteHandler.Execute")()
 
-	useTTY, err := h.resolveInteractive(step)
+	shouldPrompt, err := h.resolveInteractive(step)
 	if err != nil {
 		return nil, err
 	}
 
 	// Non-TTY with a configured default: use the default text without prompting.
-	if !useTTY {
-		defaultVal, resolveErr := h.resolveDefault(step, vars)
+	if !shouldPrompt {
+		defaultVal, resolveErr := h.ResolveDefault(ctx, step, vars)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}

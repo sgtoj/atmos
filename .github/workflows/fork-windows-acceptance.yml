@@ -1,0 +1,139 @@
+name: "[fork] Windows Acceptance (manual subset)"
+
+# Fork-only, owner-only, manual runner that clones the Windows leg of the
+# upstream acceptance-test job (.github/workflows/test.yml) but lets you scope it
+# to a subset of packages/tests. This file lives ONLY on the fork's `ci/fork`
+# branch so it never appears in a feature-branch PR or reaches upstream.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch/tag/SHA on sgtoj/atmos to build & test"
+        type: string
+        default: "fix/toolchain-onedir-symlink-extraction"
+      packages:
+        description: "Go packages to test (TEST env; e.g. ./pkg/toolchain/...)"
+        type: string
+        default: "./..."
+      run:
+        description: "go test -run regex (TESTARGS). Empty = all matched tests"
+        type: string
+        default: ""
+      verbose:
+        description: "Add -v -count=1"
+        type: boolean
+        default: true
+      install_toolchains:
+        description: "Install Terraform/OpenTofu/Helm/Helmfile/Packer (off = fast Go-only subset)"
+        type: boolean
+        default: true
+  # Registration only: workflow_dispatch is not selectable on a non-default
+  # branch until GitHub has registered the workflow (via a prior run). The first
+  # push to ci/fork runs the cheap `register` job below, which registers it. The
+  # heavy job is gated to workflow_dispatch, so pushes never run the suite.
+  push:
+    branches: [ci/fork]
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OPEN_TOFU_VERSION: "1.12.2"
+  HELM_VERSION: "v3.19.2"
+  HELMFILE_VERSION: "v1.1.0"
+  PACKER_VERSION: "1.14.2"
+  # Pipe fallback so transient proxy.golang.org errors fall back to direct
+  # module fetches (matches upstream .github/workflows/test.yml).
+  GOPROXY: "https://proxy.golang.org|direct"
+
+jobs:
+  register:
+    # Cheap no-op that gives GitHub a prior run so workflow_dispatch becomes
+    # available on the non-default ci/fork branch. Runs only on push to ci/fork.
+    if: github.event_name == 'push' && github.repository == 'sgtoj/atmos'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "Registered ${{ github.workflow }} on ${{ github.ref }}"
+
+  windows-acceptance:
+    # Fork-only, owner-only, manual.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'sgtoj/atmos' &&
+      github.actor == 'sgtoj'
+    name: Windows Acceptance (subset)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out code under test
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Add GNU tar to PATH (faster than windows tar)
+        shell: pwsh
+        run: echo "C:\Program Files\Git\usr\bin" >> $Env:GITHUB_PATH
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: "go.mod"
+
+      - name: Build atmos.exe and put it on PATH
+        shell: bash
+        run: |
+          sh scripts/build-atmos.sh windows test
+          echo "${{ github.workspace }}/build" >> "$GITHUB_PATH"
+
+      - name: Verify atmos
+        shell: bash
+        run: atmos version
+
+      - name: Install Packer
+        if: ${{ inputs.install_toolchains }}
+        uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # main
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Install Terraform, OpenTofu, Helm, Helmfile
+        if: ${{ inputs.install_toolchains }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          atmos toolchain install hashicorp/terraform
+          atmos toolchain install --default opentofu/opentofu@${{ env.OPEN_TOFU_VERSION }}
+          atmos toolchain install --default helm/helm@${{ env.HELM_VERSION }}
+          atmos toolchain install --default helmfile/helmfile@${{ env.HELMFILE_VERSION }}
+          atmos toolchain env --format=github
+
+      - name: Install helm-diff plugin
+        if: ${{ inputs.install_toolchains }}
+        shell: bash
+        run: helm plugin install https://github.com/databus23/helm-diff
+
+      - name: Acceptance tests (subset)
+        shell: bash
+        timeout-minutes: 60
+        env:
+          IN_RUN: ${{ inputs.run }}
+          IN_PACKAGES: ${{ inputs.packages }}
+          IN_VERBOSE: ${{ inputs.verbose }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Skip precondition checks so tests actually run (matches upstream).
+          ATMOS_TEST_SKIP_PRECONDITION_CHECKS: "true"
+        run: |
+          TESTARGS=""
+          [ -n "$IN_RUN" ] && TESTARGS="-run=$IN_RUN"
+          [ "$IN_VERBOSE" = "true" ] && TESTARGS="$TESTARGS -v -count=1"
+          export TEST="$IN_PACKAGES" TESTARGS
+          # atmos test acceptance reads TEST/TESTARGS via its embedded POSIX shell.
+          atmos test acceptance

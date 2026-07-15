@@ -629,7 +629,7 @@ func TestCreateValidatedSymlink(t *testing.T) {
 		t.Skip("symlink creation requires privilege on Windows; onedir Windows support is tracked separately")
 	}
 
-	t.Run("creates a symlink with a guarded absolute in-tree target", func(t *testing.T) {
+	t.Run("creates a symlink reproducing the archive's relative target", func(t *testing.T) {
 		dest := t.TempDir()
 		link := filepath.Join(dest, "bin", "npm")
 		require.NoError(t, createValidatedSymlink(dest, link, "../lib/npm-cli.js"))
@@ -637,13 +637,19 @@ func TestCreateValidatedSymlink(t *testing.T) {
 		info, err := os.Lstat(link)
 		require.NoError(t, err)
 		require.NotZero(t, info.Mode()&os.ModeSymlink)
-		// The link target is the guarded ABSOLUTE path (the value the sink's
-		// containment check validates); onedir trees are pinned to their version
-		// dir rather than relocatable.
+		// The link target is the archive's ORIGINAL relative link (#2750), not a
+		// root/cwd-relative or absolute rewrite: a symlink resolves relative to
+		// its own directory, so reproducing the archive verbatim resolves whether
+		// the install root is absolute or a relative path such as `.tools`.
 		target, err := os.Readlink(link)
 		require.NoError(t, err)
-		assert.True(t, filepath.IsAbs(target), "target must be absolute, got %q", target)
-		assert.Equal(t, filepath.Join(dest, "lib", "npm-cli.js"), target)
+		assert.False(t, filepath.IsAbs(target), "target must be relative, got %q", target)
+		assert.Equal(t, filepath.FromSlash("../lib/npm-cli.js"), target)
+		// It still resolves to the real in-tree file once that file exists.
+		writeFileUnder(t, dest, "lib/npm-cli.js", "NPM")
+		got, err := os.ReadFile(link)
+		require.NoError(t, err)
+		assert.Equal(t, "NPM", string(got))
 	})
 
 	t.Run("rejects a relative target that escapes dest", func(t *testing.T) {
@@ -680,7 +686,7 @@ func TestCreateValidatedSymlink(t *testing.T) {
 // sink's containment guards (what CodeQL flags as "arbitrary file write via
 // archive symlinks"). The rejection cases return before any filesystem
 // mutation, so they run on every platform (no symlink privilege needed); the
-// success cases assert the guarded ABSOLUTE target and are Unix-only.
+// success cases assert the reproduced RELATIVE archive target and are Unix-only.
 func TestCreateValidatedSymlink_Validation(t *testing.T) {
 	t.Run("rejects an empty target", func(t *testing.T) {
 		root := t.TempDir()
@@ -720,7 +726,7 @@ func TestCreateValidatedSymlink_Validation(t *testing.T) {
 		assert.True(t, os.IsNotExist(statErr), "no link may be created outside root")
 	})
 
-	t.Run("creates an absolute in-root link for a valid target", func(t *testing.T) {
+	t.Run("creates a relative in-root link for a valid target", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("symlink creation requires privilege on Windows")
 		}
@@ -729,19 +735,24 @@ func TestCreateValidatedSymlink_Validation(t *testing.T) {
 		require.NoError(t, createValidatedSymlink(root, link, "../lib/npm-cli.js"))
 		got, err := os.Readlink(link)
 		require.NoError(t, err)
-		assert.Equal(t, filepath.Join(root, "node", "lib", "npm-cli.js"), got)
+		// Reproduces the archive's relative target verbatim (#2750), not the
+		// resolved absolute path.
+		assert.Equal(t, filepath.FromSlash("../lib/npm-cli.js"), got)
 	})
 
-	t.Run("cleans a redundant in-root target", func(t *testing.T) {
+	t.Run("reproduces a redundant archive target verbatim", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("symlink creation requires privilege on Windows")
 		}
 		root := t.TempDir()
 		link := filepath.Join(root, "node", "bin", "npm")
+		// The archive's link is reproduced verbatim (#2750) rather than rewritten
+		// to the cleaned/resolved path; containment is still validated via the
+		// resolved path, which stays inside root.
 		require.NoError(t, createValidatedSymlink(root, link, "./sub/../other"))
 		got, err := os.Readlink(link)
 		require.NoError(t, err)
-		assert.Equal(t, filepath.Join(root, "node", "bin", "other"), got)
+		assert.Equal(t, filepath.FromSlash("./sub/../other"), got)
 	})
 }
 
@@ -1168,6 +1179,84 @@ func TestExtractZip_Onedir_RecreatesSymlinkEntrypoint(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(versionDir, manifest.Entrypoints["tool"]))
 	require.NoError(t, err)
 	assert.Equal(t, "TOOL-BINARY", string(got))
+}
+
+// TestExtractAndInstall_Onedir_RelativeInstallPath_LeadingSymlinkEntrypoint is
+// the #2750 regression: with a RELATIVE install root (the real-world default,
+// e.g. `install_path: .tools`) and a onedir package whose FIRST files[] entry is
+// a symlink (mirrors nodejs/node <=24.10.0, where `corepack` leads and is a
+// symlink into ../lib), the materialized link must use the archive's relative
+// target so it resolves. The old code wrote a root/cwd-relative target that
+// dangled, so the post-install chmod of the primary entrypoint failed with
+// ENOENT. A relative binDir (via t.Chdir) exercises the exact failure the
+// absolute-TempDir tests missed.
+func TestExtractAndInstall_Onedir_RelativeInstallPath_LeadingSymlinkEntrypoint(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("in-archive symlink entrypoints require symlink privilege on Windows; onedir Windows support is tracked separately")
+	}
+
+	base := t.TempDir()
+	t.Chdir(base) // cwd = base, so a relative binDir mirrors `install_path: .tools`.
+
+	archive := filepath.Join(base, "node.tar.gz")
+	writeTarGzTree(t, archive, []tarEntry{
+		{name: "node-v1/bin/corepack", link: "../lib/node_modules/corepack/dist/corepack.js"},
+		{name: "node-v1/bin/npm", link: "../lib/node_modules/npm/bin/npm-cli.js"},
+		{name: "node-v1/bin/node", content: "NODE-BINARY", mode: 0o755},
+		{name: "node-v1/lib/node_modules/corepack/dist/corepack.js", content: "COREPACK", mode: 0o644},
+		{name: "node-v1/lib/node_modules/npm/bin/npm-cli.js", content: "NPM-CLI", mode: 0o644},
+	})
+
+	// A RELATIVE binDir (not t.TempDir(), which is absolute) is the crux of #2750.
+	inst := &Installer{binDir: filepath.Join(".tools", "bin")}
+	tool := &registry.Tool{
+		RepoOwner: "nodejs",
+		RepoName:  "node",
+		// corepack leads files[], mirroring node <=24.10.0; it is a symlink, so
+		// the post-install chmod of the resolved primary must follow it to a real
+		// file rather than a dangling link.
+		Files: []registry.File{
+			{Name: "corepack", Src: "node-v1/bin/corepack"},
+			{Name: "npm", Src: "node-v1/bin/npm"},
+			{Name: "node", Src: "node-v1/bin/node"},
+		},
+	}
+
+	resolved, err := inst.extractAndInstall(tool, archive, "20.19.6")
+	require.NoError(t, err)
+
+	// The exact operation that failed on the bug: installTool chmods the resolved
+	// primary entrypoint (corepack), which is a symlink; chmod follows it.
+	require.NoError(t, os.Chmod(resolved, 0o755))
+
+	// os.Stat FOLLOWS the link, so it must reach the real corepack script (Lstat
+	// alone would still pass on a dangling link).
+	info, err := os.Stat(resolved)
+	require.NoError(t, err)
+	require.False(t, info.IsDir())
+	payload, err := os.ReadFile(resolved)
+	require.NoError(t, err)
+	assert.Equal(t, "COREPACK", string(payload))
+
+	// The materialized target is the archive's relative link — not absolute and
+	// not root/cwd-relative.
+	target, err := os.Readlink(resolved)
+	require.NoError(t, err)
+	assert.False(t, filepath.IsAbs(target), "symlink target must be relative, got %q", target)
+	assert.Equal(t, filepath.FromSlash("../lib/node_modules/corepack/dist/corepack.js"), target)
+
+	// which/env/exec resolve each entrypoint through the manifest to a real file:
+	// npm chains through its recreated symlink to the CLI script; node is a real
+	// file.
+	npm := inst.GetBinaryPath("nodejs", "node", "20.19.6", "npm")
+	npmPayload, err := os.ReadFile(npm)
+	require.NoError(t, err)
+	assert.Equal(t, "NPM-CLI", string(npmPayload))
+
+	node := inst.GetBinaryPath("nodejs", "node", "20.19.6", "node")
+	nodePayload, err := os.ReadFile(node)
+	require.NoError(t, err)
+	assert.Equal(t, "NODE-BINARY", string(nodePayload))
 }
 
 // TestExtractAndInstall_CleansUpOnFailure verifies that a failed extraction of a

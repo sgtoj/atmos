@@ -25,8 +25,11 @@ func materializeSymlinks(root string, symlinks []pendingSymlink) error {
 // deterministically on any platform; production always uses os.Symlink.
 var symlinkFunc = os.Symlink
 
-// createValidatedSymlink creates an in-tree archive symlink.
-// It validates both link and target paths immediately before os.Symlink.
+// createValidatedSymlink creates an in-tree archive symlink, reproducing the
+// archive's original relative target so the link resolves relative to its own
+// directory — independent of whether the install root is an absolute path or a
+// relative one such as `.tools`. It validates both link and target paths
+// immediately before os.Symlink.
 func createValidatedSymlink(root, linkPath, linkname string) error {
 	return createValidatedSymlinkForOS(root, linkPath, linkname, runtime.GOOS)
 }
@@ -44,6 +47,14 @@ func createValidatedSymlinkForOS(root, linkPath, linkname, goos string) error {
 	if linkname == "" || filepath.IsAbs(linkname) {
 		return fmt.Errorf("%w: illegal symlink target: %s -> %q", ErrFileOperation, linkPath, linkname)
 	}
+	// resolved is the link target rebased onto the link's own directory and
+	// cleaned. It is used ONLY for containment validation and the Windows
+	// fallback below — never as the symlink target itself. A symlink target is
+	// interpreted relative to the link's own directory, so the link is created
+	// with the archive's ORIGINAL relative target (linkname); that reproduces the
+	// upstream archive exactly and resolves whether the install root is absolute
+	// or a relative path such as `.tools`. Writing resolved instead embeds a
+	// root/cwd-relative path that dangles from the link's directory (see #2750).
 	resolved := filepath.Clean(filepath.Join(filepath.Dir(cleanLinkPath), linkname))
 	if resolved != cleanRoot && !strings.HasPrefix(resolved, cleanRoot+string(os.PathSeparator)) {
 		return fmt.Errorf("%w: symlink target escapes root: %s -> %q", ErrFileOperation, linkPath, linkname)
@@ -54,7 +65,7 @@ func createValidatedSymlinkForOS(root, linkPath, linkname, goos string) error {
 	}
 	_ = os.Remove(cleanLinkPath)
 
-	if err := symlinkFunc(resolved, cleanLinkPath); err == nil {
+	if err := symlinkFunc(linkname, cleanLinkPath); err == nil {
 		return nil
 	} else if goos != "windows" {
 		return fmt.Errorf("%w: failed to create symlink %s: %w", ErrFileOperation, linkPath, err)
